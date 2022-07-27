@@ -1,0 +1,76 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROC [dbo].[insert_estado_socios_club_grido] AS
+BEGIN
+
+    SET NOCOUNT ON
+DECLARE @fecha_max date 
+SELECT @fecha_max = ISNULL(max(fecha),'2013-01-01') FROM dbo.estado_socios_club_grido
+
+-- Primero, inserto las fechas desde que hubo una alta en el club
+
+INSERT INTO dbo.estado_socios_club_grido(fecha)
+SELECT CONVERT(DATE,c.ActivatedDate) FROM dbo.Customer c
+WHERE CONVERT(DATE,c.ActivatedDate) > @fecha_max
+GROUP BY CONVERT(DATE,c.ActivatedDate)
+
+-- Segundo, agrego los socios que se dieron de baja
+
+UPDATE dbo.estado_socios_club_grido
+SET socios_abandono = tabla_baja.socios_baja
+FROM		(SELECT DATEADD(year,1,ultima_compra.fecha_ultima_compra) 'fecha_churn', count(DISTINCT ultima_compra.customerId) 'socios_baja'
+			FROM 
+			(SELECT sc.CustomerId, CONVERT(DATE,max(s.SaleDate)) 'fecha_ultima_compra' FROM dbo.Sale s
+			JOIN dbo.SaleCustomer sc ON sc.SaleId = s.SaleId
+			GROUP BY sc.CustomerId) as ultima_compra
+			WHERE DATEADD(year,1,ultima_compra.fecha_ultima_compra) < CONVERT(DATE,getdate())
+			GROUP BY ultima_compra.fecha_ultima_compra) as tabla_baja
+WHERE fecha = tabla_baja.fecha_churn
+AND fecha > @fecha_max
+
+-- Tercero, agrego los socios que se dieron de alta en cada día
+UPDATE dbo.estado_socios_club_grido
+SET socios_alta = tabla_alta.socios_alta
+FROM (SELECT CONVERT(DATE,c.ActivatedDate) 'ActivatedDate',COUNT(DISTINCT c.CustomerId) 'socios_alta'
+						FROM dbo.Customer c
+						GROUP BY CONVERT(DATE,c.ActivatedDate)) as tabla_alta
+WHERE fecha = tabla_alta.ActivatedDate
+AND fecha > @fecha_max
+
+-- Cuarto, dejo grabado cuantos socios hay en total por día
+UPDATE dbo.estado_socios_club_grido
+
+SET socios_totales = tabla_totales.socios_totales
+FROM
+(
+SELECT CONVERT(DATE,c.ActivatedDate) 'fecha_totales',
+sum(tabla_alta.socios_alta) OVER (ORDER BY CONVERT(DATE,c.ActivatedDate) ASC)
+- sum(tabla_baja.socios_baja) OVER (ORDER BY CONVERT(DATE,c.ActivatedDate) ASC) as socios_totales
+
+FROM dbo.Customer c
+
+LEFT JOIN
+	(SELECT CONVERT(DATE,c.ActivatedDate) 'fecha_alta',COUNT(DISTINCT c.CustomerId) 'socios_alta'
+	FROM dbo.Customer c
+	GROUP BY CONVERT(DATE,c.ActivatedDate)) as tabla_alta ON tabla_alta.fecha_alta = CONVERT(DATE,c.ActivatedDate)
+						
+LEFT JOIN 
+	(SELECT CONVERT(DATE,c.DeActivatedDate) 'fecha_baja',COUNT(DISTINCT c.CustomerId) 'socios_baja'
+	FROM dbo.Customer c
+	GROUP BY CONVERT(DATE,c.DeActivatedDate)) as tabla_baja ON tabla_baja.fecha_baja = CONVERT(DATE,c.ActivatedDate)
+
+GROUP BY CONVERT(DATE,c.ActivatedDate),tabla_alta.socios_alta,tabla_baja.socios_baja
+
+) as tabla_totales
+WHERE fecha = tabla_totales.fecha_totales
+AND fecha > @fecha_max
+
+-- Quinto, agrego fecha de sincronización de los datos
+
+ UPDATE dbo.estado_socios_club_grido
+ SET SyncDate = CONVERT(DATETIME,getdate())
+
+
+END

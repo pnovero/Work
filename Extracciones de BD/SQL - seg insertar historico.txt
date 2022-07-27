@@ -1,0 +1,38 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROC [dbo].[sp_INSERT_Clientes_Segmentacion_Historico] AS
+BEGIN
+    SET NOCOUNT ON
+
+
+	INSERT INTO [dbo].[Clientes_Segmentacion_Historico]
+           ([CustomerId]
+		   ,[GenderCode]
+		   ,[Age]
+		   ,[LastSale]
+		   ,[DaysLastSale]   
+		   ,[Exchange_Products]
+           ,[SumGrams]
+           ,[CountSaleId]
+           ,[desde]
+           ,[hasta]
+           ,[fhCorrida]
+           ,[categoria])
+	SELECT  CustomerId, 
+			GenderCode,
+			Age,
+			 LastSale, 
+			 DaysLastSale, 
+			 Exchange_Products,
+			 Kilos,
+			 cantidad_compras,
+			 desde,
+			 hasta,
+			 fhCorrida, 
+			 categoria
+	  FROM [dbo].[Clientes_Segmentacion_2022] 
+	  
+
+END

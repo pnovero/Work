@@ -1,0 +1,25 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROC [dbo].[sp_Clientes_Segmentacion_Solo_Cambios] AS
+BEGIN
+    -- SET NOCOUNT ON added to prevent extra result sets from
+    -- interfering with SELECT statements.
+    SET NOCOUNT ON
+
+    UPDATE Clientes_Segmentacion_Solo_Cambios
+	SET FechaDesactivacion = GETDATE(),
+	FechaActualizacion = GETDATE()
+	WHERE EXISTS (SELECT * FROM Clientes_Segmentacion_2022 CS2
+					WHERE Clientes_Segmentacion_Solo_Cambios.CustomerId = CS2.CustomerId
+					AND Clientes_Segmentacion_Solo_Cambios.SegmentacionId != CS2.uniqueId_Segmentacion_Code)
+
+	INSERT INTO Clientes_Segmentacion_Solo_Cambios
+	(CustomerId, SegmentacionId, FechaActivacion, FechaDesactivacion, FechaActualizacion)
+	SELECT CS.CustomerId, CS.uniqueId_Segmentacion_Code, GETDATE(), NULL, GETDATE() FROM [dbo].[Clientes_Segmentacion_2022] CS
+	WHERE NOT EXISTS (SELECT * FROM Clientes_Segmentacion_Solo_Cambios CSC
+						WHERE CSC.CustomerId = CS.CustomerId
+						AND CSC.FechaDesactivacion IS NULL
+						AND CSC.CustomerId = CS.CustomerId)
+END

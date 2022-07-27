@@ -1,0 +1,11 @@
+SELECT COUNT(DISTINCT sc.CustomerId) 'socios_consumieron_AC_mes'
+FROM dbo.SaleCustomer sc INNER JOIN dbo.Sale s ON s.SaleId = sc.SaleId
+INNER JOIN dbo.powerbi_franquicias_ventas_articulos art ON art.codigo = s.ProductId AND art.ptipo = 'H'
+WHERE s.SaleDate BETWEEN '2022-06-01' AND '2022-07-01'
+AND art.idCategoria =3
+AND s.InvalidatedDate IS NULL
+
+SELECT COUNT(DISTINCT sc.CustomerId) 'socios_consumieron_mes'
+FROM dbo.SaleCustomer sc INNER JOIN dbo.Sale s ON s.SaleId = sc.SaleId
+WHERE s.SaleDate BETWEEN '2022-06-01' AND '2022-07-01'
+AND s.InvalidatedDate IS NULL

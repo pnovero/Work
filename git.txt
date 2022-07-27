@@ -1,0 +1,8 @@
+cd path
+git clone path
+cd carpeta clonada
+git branch develop -- crea una branch para no mandar los cambios a main. El que los manda a main deberia ser un jefe que hace el pull request desde git
+git checkout develop -- entra a la branch
+git add .
+git commit -m "agrego mensaje"
+git push origin develop

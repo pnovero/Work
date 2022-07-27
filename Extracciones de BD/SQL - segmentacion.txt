@@ -1,0 +1,88 @@
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+ALTER PROC [dbo].[SP_Insert_Clientes_Segmentacion_2022] AS
+BEGIN
+    SET NOCOUNT ON
+
+		DECLARE @años_corrida INT SET @años_corrida = -1
+		DECLARE @meses_entrega_puntos INT SET @meses_entrega_puntos= -4
+
+		DECLARE @desde DATE SET @desde = DATEADD(YEAR, @años_corrida, GETDATE())
+		DECLARE @hasta DATE SET @hasta = GETDATE()
+		DECLARE @desde_entrega_puntos DATE SET @desde_entrega_puntos = DATEADD(MONTH, @meses_entrega_puntos, GETDATE())
+			
+		INSERT INTO Clientes_Segmentacion_2022
+			(CustomerId, 
+			 GenderCode,
+			 Age,
+			 LastSale, 
+			 DaysLastSale, 
+			 Exchange_Products,
+			 Kilos,
+			 cantidad_compras,
+			 desde,
+			 hasta,
+			 fhCorrida, 
+			 categoria)
+
+		SELECT C.CustomerId 'CustomerId',
+			C.GenderCode 'GenderCode',
+			DATEDIFF(YY, C.BirthDate, GETDATE()) - CASE WHEN (MONTH(C.BirthDate) > MONTH(GETDATE())) OR (MONTH(C.BirthDate) = MONTH(GETDATE()) AND DAY(C.BirthDate) > DAY(GETDATE())) THEN 1 ELSE 0 END 'Age',
+			MAX(CONVERT(DATE, S.SaleDate)) 'LastSale',
+			DATEDIFF(DAY, MAX(CONVERT(DATE, S.SaleDate)), @hasta) 'DaysLastSale',
+			
+			ISNULL((SELECT SUM(E.Amount) FROM dbo.Exchange E
+					WHERE E.CustomerId = c.CustomerId
+					AND E.ExchangeDate BETWEEN @desde AND @hasta
+					AND E.InvalidatedDate IS NULL), 0) 'productos_canjeados',
+
+			ISNULL((SELECT SUM(s_bis.Amount * s_bis.ProductWeightGrams *0.001) 
+			FROM dbo.SaleCustomer sc_bis
+			INNER JOIN dbo.Sale s_bis ON s_bis.SaleId = sc_bis.SaleId
+			WHERE sc_bis.CustomerId = c.CustomerId
+			AND s_bis.InvalidatedDate IS NULL 
+			AND s_bis.SaleDate BETWEEN @desde AND @hasta),0) AS Kilos,
+
+			ISNULL(count(DISTINCT s.SaleId),0) 'cantidad_compras', @desde 'desde', @hasta 'hasta', 
+			
+			GETDATE() 'fhCorrida',
+	
+			NULL 'categoria'
+		
+			FROM dbo.Customer C
+			LEFT JOIN dbo.SaleCustomer sc ON sc.CustomerId = c.CustomerId
+			LEFT JOIN dbo.Sale s ON s.SaleId = sc.SaleId
+				AND s.InvalidatedDate IS NULL 
+				AND s.SaleDate BETWEEN @desde AND @hasta	
+			WHERE c.DeactivatedDate IS NULL
+
+			GROUP BY C.CustomerId,C.GenderCode,C.BirthDate
+
+
+			---ASIGNAMOS LA CATEGORÍA
+			UPDATE Clientes_Segmentacion_2022
+			SET categoria = 
+							CASE
+							WHEN CustomerId IN (SELECT cpl.CustomerId --Aquellos que recibieron puntos de cortesía en los últimos 4 meses
+													FROM dbo.CustomerPointsLog cpl
+													WHERE cpl.LogDate > @desde_entrega_puntos 
+													GROUP BY cpl.CustomerId
+													HAVING sum(case when cpl.EventTypeCode IN ('InstitutionalPoints','HumanResourcesPoints','PrizePoints') then 1 else 0 end) > 0) THEN 'CORTESÍA'
+							WHEN LastSale IS NULL  then 'ABANDONO'
+							WHEN Kilos > 35 then 'ALERTA DE CONSUMO'
+							WHEN cantidad_compras > 45 then 'ALERTA DE CONSUMO'
+							WHEN (case when cantidad_compras > 0 then Kilos / cantidad_compras else 0 end) > 2.5 AND cantidad_compras > 3 THEN 'ALERTA DE CONSUMO'
+							WHEN Kilos >= 14 THEN 'ORO'
+							WHEN DaysLastSale > 100 THEN 'BRONCE'
+							ELSE 'PLATA' END
+			WHERE categoria IS NULL
+
+			UPDATE Clientes_Segmentacion_2022
+			SET uniqueId_Segmentacion_Code = SC.uniqueId FROM [dbo].[Clientes_Segmentacion_Codes] SC
+			WHERE [categoria] = SC.Code
+			AND [uniqueId_Segmentacion_Code] IS NULL
+
+
+END
